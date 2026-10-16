@@ -24,6 +24,14 @@ if [ -f crates/core/src/catalog.rs ] && grep -q 'LAUNCHER_REPO' crates/core/src/
   grep -q 'unwrap_or_default()' crates/native/src/backend.rs
   grep -q 'if url.is_empty()' crates/native/src/backend.rs
 fi
+# 2b. HTTPS: the OS certificate verifier needs SecTrustEvaluateWithError (10.14+) and Sierra's root
+# store is years out of date, so verify against the bundled Mozilla roots (webpki-roots) instead.
+if [ -f crates/native/src/http.rs ] && grep -q 'RootCerts::PlatformVerifier' crates/native/src/http.rs; then
+  perl -pi -e 's#"platform-verifier"#"rustls-webpki-roots"#' crates/native/Cargo.toml
+  perl -pi -e 's#RootCerts::PlatformVerifier#RootCerts::WebPki#g' crates/native/src/http.rs
+  cargo metadata --format-version 1 >/dev/null # adds webpki-roots to Cargo.lock, changing nothing else
+fi
+
 # 3. Upstream fixes needed until they land upstream (each applies only while the bug is there).
 # craft-launcher #461 added a `replace` argument to install_dmg but missed the macOS self-update call.
 if [ -f crates/native/src/self_update.rs ]; then
