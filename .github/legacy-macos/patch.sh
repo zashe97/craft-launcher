@@ -24,4 +24,10 @@ if [ -f crates/core/src/catalog.rs ] && grep -q 'LAUNCHER_REPO' crates/core/src/
   grep -q 'unwrap_or_default()' crates/native/src/backend.rs
   grep -q 'if url.is_empty()' crates/native/src/backend.rs
 fi
+# 3. Upstream fixes needed until they land upstream (each applies only while the bug is there).
+# craft-launcher #461 added a `replace` argument to install_dmg but missed the macOS self-update call.
+if [ -f crates/native/src/self_update.rs ]; then
+  perl -pi -e 's#install_dmg\((&LAUNCHER, &(?:file|dmg), Some\(&existing\), None), (?!false)#install_dmg(${1}, false, #' crates/native/src/self_update.rs
+fi
+
 echo "patched for macOS $MIN (owner $OWNER)"
