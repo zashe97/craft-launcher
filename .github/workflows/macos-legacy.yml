@@ -29,6 +29,20 @@ jobs:
       - name: Patch for macOS 10.12
         run: bash .github/legacy-macos/patch.sh "${GITHUB_REPOSITORY_OWNER}"
       - name: Build and package (x86_64, ad-hoc signed)
+        env:
+          # Weak-link Apple's frameworks: a symbol newer than 10.12 (e.g. NSAboutPanelOptionApplicationIcon,
+          # 10.13) is then NULL on Sierra instead of stopping the app at launch.
+          CARGO_TARGET_X86_64_APPLE_DARWIN_RUSTFLAGS: >-
+            -C link-arg=-Wl,-weak_framework,AppKit -C link-arg=-Wl,-weak_framework,Foundation
+            -C link-arg=-Wl,-weak_framework,CoreFoundation -C link-arg=-Wl,-weak_framework,CoreGraphics
+            -C link-arg=-Wl,-weak_framework,CoreText -C link-arg=-Wl,-weak_framework,QuartzCore
+            -C link-arg=-Wl,-weak_framework,Metal -C link-arg=-Wl,-weak_framework,CoreVideo
+            -C link-arg=-Wl,-weak_framework,CoreMedia -C link-arg=-Wl,-weak_framework,VideoToolbox
+            -C link-arg=-Wl,-weak_framework,AVFoundation -C link-arg=-Wl,-weak_framework,AudioToolbox
+            -C link-arg=-Wl,-weak_framework,CoreAudio -C link-arg=-Wl,-weak_framework,IOKit
+            -C link-arg=-Wl,-weak_framework,Security -C link-arg=-Wl,-weak_framework,SystemConfiguration
+            -C link-arg=-Wl,-weak_framework,CoreServices -C link-arg=-Wl,-weak_framework,ApplicationServices
+            -C link-arg=-Wl,-weak_framework,Carbon
         run: |
           unset MACOS_SIGN_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           set -o pipefail
@@ -60,6 +74,18 @@ jobs:
               fi
             done
           done
+          # Every imported symbol, checked against the macOS 10.12 SDK's symbol lists.
+          curl -sSfL -o sdk.tar.xz https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX10.12.sdk.tar.xz
+          tar xJf sdk.tar.xz
+          bins=(target/macos-package/*.app/Contents/MacOS/*)
+          if ! python3 .github/legacy-macos/missing_symbols.py MacOSX10.12.sdk "${bins[@]}" > missing.txt; then fail=1; fi
+          cat missing.txt
+          if grep -q '^STRONG' missing.txt; then
+            echo "::error title=Symbols missing on 10.12 (app won't start)::$(grep '^STRONG' missing.txt | awk 'BEGIN{ORS="%0A"} {print}')"
+          fi
+          if grep -q '^weak' missing.txt; then
+            echo "::warning title=Symbols missing on 10.12 (NULL there, crash only if used)::$(grep '^weak' missing.txt | awk 'BEGIN{ORS="%0A"} {print}')"
+          fi
           exit $fail
       - name: Publish release
         env:
