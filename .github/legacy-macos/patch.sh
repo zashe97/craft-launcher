@@ -23,6 +23,9 @@ if [ -f crates/core/src/catalog.rs ] && grep -q 'LAUNCHER_REPO' crates/core/src/
   FEED="https://github.com/$OWNER/craft-launcher/releases/download/feed/release_info.json"
   perl -pi -e "s#(pub const FEED_URL: &str = )\"[^\"]*\"#\${1}\"$FEED\"#" crates/core/src/feed.rs
   grep -q "FEED_URL: &str = \"$FEED\"" crates/core/src/feed.rs
+  # That feed is made once a day and GitHub can start the job late: trust it for 36 h, not 24.
+  perl -pi -e 's#^pub const MAX_AGE: i64 = 24 \* 3600;#pub const MAX_AGE: i64 = 36 * 3600;#' crates/core/src/feed.rs
+  grep -q '^pub const MAX_AGE: i64 = 36 \* 3600;' crates/core/src/feed.rs
   # The fork builds are ad-hoc signed (no Developer ID), so don't require ArtCraft's team
   # signature; the download is still checked against the release's SHA-256 digest.
   perl -pi -e 's#Self \{ team: Some\(TEAM_ID\), version: release\.version\.as_ref\(\) \}#Self { team: None, version: release.version.as_ref() }#' crates/native/src/install.rs
