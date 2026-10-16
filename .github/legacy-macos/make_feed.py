@@ -39,7 +39,12 @@ def latest(owner, repo, token):
 def main():
     owner, out = sys.argv[1], sys.argv[2]
     token = os.environ["GH_TOKEN"]
-    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+    now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # The launcher trusts an entry for 24 h after app_last_fetched (feed::MAX_AGE) and reads a time
+    # in the future as "now". This feed is made once a day and GitHub can start the job late, so
+    # stamp the entries 6 h ahead: they stay trusted for 30 h and never lapse between two runs.
+    fresh_until = (now_dt + datetime.timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
     apps = {}
     for app_id, repo in APPS.items():
         try:
@@ -67,7 +72,7 @@ def main():
                     for a in r.get("assets", [])
                 ],
             }
-        apps[app_id] = {"repo": f"{owner}/{repo}", "latest_release": release, "app_last_fetched": now}
+        apps[app_id] = {"repo": f"{owner}/{repo}", "latest_release": release, "app_last_fetched": fresh_until}
         print(f"{app_id}: {release['tag'] if release else 'no release'}")
     feed = {"release_info": {"apps": apps, "last_fetched": now}, "app_renames": [], "repo_renames": [],
             "important_notices": {"announcements": [], "alerts": []}}
