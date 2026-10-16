@@ -1,6 +1,6 @@
 # Publishes the release feed the patched launcher reads (see .github/legacy-macos/make_feed.py):
 # one file listing the latest 10.12 build of every fork, so the launcher doesn't hit GitHub's
-# 60-requests-an-hour limit. Served from this repo's "feed" release, refreshed twice a day after
+# 60-requests-an-hour limit. Served from this repo's "feed" release, refreshed once a day after
 # the daily builds (04:23 UTC).
 name: Launcher release feed
 
@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '11 5,17 * * *'
+    - cron: '11 5 * * *'
   # A new launcher build is listed right away.
   workflow_run:
     workflows: [macOS 10.12 build]
