@@ -10,6 +10,10 @@ on:
     branches: [main]
   schedule:
     - cron: '11 5,17 * * *'
+  # A new launcher build is listed right away.
+  workflow_run:
+    workflows: [macOS 10.12 build]
+    types: [completed]
 
 permissions:
   contents: write
