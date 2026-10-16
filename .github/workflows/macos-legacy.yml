@@ -1,0 +1,76 @@
+# Builds this Craft App for macOS 10.12 Sierra (Intel) and publishes it as a GitHub release
+# of this fork, where the patched launcher finds it. See .github/legacy-macos/patch.sh.
+name: macOS 10.12 build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-legacy
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-legacy-x86_64
+      - name: Patch for macOS 10.12
+        run: bash .github/legacy-macos/patch.sh "${GITHUB_REPOSITORY_OWNER}"
+      - name: Build and package (x86_64, ad-hoc signed)
+        run: |
+          unset MACOS_SIGN_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          bash packaging/macos/package.sh --arch x86_64
+      - name: Check the binaries target 10.12
+        run: |
+          set -euo pipefail
+          ls -la dist/release
+          # Frameworks that don't exist on 10.12: linking any of them would stop the app at launch.
+          NEWER='UniformTypeIdentifiers|UserNotifications|ScreenCaptureKit|Vision|CoreML|Network\.framework|NaturalLanguage|CryptoKit|Combine|SwiftUI|libswift|MetalPerformanceShadersGraph|AppTrackingTransparency|LinkPresentation'
+          fail=0
+          for app in target/macos-package/*.app; do
+            for bin in "$app"/Contents/MacOS/*; do
+              echo "== $bin"
+              otool -l "$bin" | grep -A4 -E 'LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX' | grep -E 'minos|version' || true
+              minos=$(vtool -show-build "$bin" 2>/dev/null | awk '/minos/ {print $2; exit}')
+              echo "minos: ${minos:-unknown}"
+              if [ "$minos" != "10.12" ]; then echo "::error::$bin has minos $minos"; fail=1; fi
+              otool -L "$bin" | tail -n +2
+              if otool -L "$bin" | grep -E "$NEWER" | grep -v '(weak)' ; then
+                echo "::error::$bin links a framework newer than 10.12"; fail=1
+              fi
+            done
+          done
+          exit $fail
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . packaging/env.sh
+          TAG="v$VERSION"
+          cd dist/release
+          shasum -a 256 *.dmg *.zip 2>/dev/null > SHA256SUMS.txt || true
+          NOTES="Build for macOS 10.12 Sierra (Intel x86_64), from ${GITHUB_SHA::7}. Ad-hoc signed: the first time, right-click the app and choose Open."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" *.dmg SHA256SUMS.txt $(ls *.zip 2>/dev/null) --clobber
+          else
+            gh release create "$TAG" *.dmg SHA256SUMS.txt $(ls *.zip 2>/dev/null) --target "$GITHUB_SHA" --title "$TAG (macOS 10.12)" --notes "$NOTES" --latest
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-10.12-x86_64
+          path: dist/release/
+          if-no-files-found: ignore
