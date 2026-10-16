@@ -61,12 +61,14 @@ jobs:
           . packaging/env.sh
           TAG="v$VERSION"
           cd dist/release
-          shasum -a 256 *.dmg *.zip 2>/dev/null > SHA256SUMS.txt || true
+          shopt -s nullglob
+          files=(./*.dmg ./*.zip)
+          shasum -a 256 "${files[@]}" > SHA256SUMS.txt
           NOTES="Build for macOS 10.12 Sierra (Intel x86_64), from ${GITHUB_SHA::7}. Ad-hoc signed: the first time, right-click the app and choose Open."
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" *.dmg SHA256SUMS.txt $(ls *.zip 2>/dev/null) --clobber
+            gh release upload "$TAG" "${files[@]}" ./SHA256SUMS.txt --clobber
           else
-            gh release create "$TAG" *.dmg SHA256SUMS.txt $(ls *.zip 2>/dev/null) --target "$GITHUB_SHA" --title "$TAG (macOS 10.12)" --notes "$NOTES" --latest
+            gh release create "$TAG" "${files[@]}" ./SHA256SUMS.txt --target "$GITHUB_SHA" --title "$TAG (macOS 10.12)" --notes "$NOTES" --latest
           fi
       - uses: actions/upload-artifact@v4
         if: always()
