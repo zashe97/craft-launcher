@@ -1,0 +1,38 @@
+# Publishes the release feed the patched launcher reads (see .github/legacy-macos/make_feed.py):
+# one file listing the latest 10.12 build of every fork, so the launcher doesn't hit GitHub's
+# 60-requests-an-hour limit. Served from this repo's "feed" release.
+name: Launcher release feed
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 */2 * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: legacy-feed
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # GitHub turns scheduled workflows off after 60 days without commits; re-enabling keeps this one on.
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/legacy-feed.yml/enable" || true
+          python3 .github/legacy-macos/make_feed.py "$GITHUB_REPOSITORY_OWNER" release_info.json
+          python3 -c "import json; json.load(open('release_info.json'))"
+          if ! gh release view feed >/dev/null 2>&1; then
+            gh release create feed --prerelease --latest=false --title "Launcher release feed" \
+              --notes "Read by the macOS 10.12 launcher. Updated automatically; not an app release."
+          fi
+          gh release upload feed release_info.json --clobber

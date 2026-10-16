@@ -18,11 +18,11 @@ grep -A1 LSMinimumSystemVersion packaging/macos/Info.plist.in | grep -q "$MIN"
 if [ -f crates/core/src/catalog.rs ] && grep -q 'LAUNCHER_REPO' crates/core/src/catalog.rs; then
   perl -pi -e "s#\"storytold/#\"$OWNER/#g; s#(GITHUB_OWNER: &str = )\"storytold\"#\${1}\"$OWNER\"#" crates/core/src/catalog.rs
   grep -q "GITHUB_OWNER: &str = \"$OWNER\"" crates/core/src/catalog.rs
-  # The ArtCraft release feed lists the official builds: skip it and ask GitHub directly.
-  perl -0pi -e 's#\.unwrap_or_else\(\|\| artcraft_launcher_core::feed::FEED_URL\.to_string\(\)\)#.unwrap_or_default()#' crates/native/src/backend.rs
-  perl -0pi -e 's#(fn fetch_feed\([^{]*\{\n)#${1}    if url.is_empty() {\n        return FeedFetch::Failed;\n    }\n#' crates/native/src/backend.rs
-  grep -q 'unwrap_or_default()' crates/native/src/backend.rs
-  grep -q 'if url.is_empty()' crates/native/src/backend.rs
+  # The ArtCraft release feed lists the official builds: read the forks' own feed instead (one
+  # file, published by .github/workflows/legacy-feed.yml), so GitHub's API isn't asked per app.
+  FEED="https://github.com/$OWNER/craft-launcher/releases/download/feed/release_info.json"
+  perl -pi -e "s#(pub const FEED_URL: &str = )\"[^\"]*\"#\${1}\"$FEED\"#" crates/core/src/feed.rs
+  grep -q "FEED_URL: &str = \"$FEED\"" crates/core/src/feed.rs
   # The fork builds are ad-hoc signed (no Developer ID), so don't require ArtCraft's team
   # signature; the download is still checked against the release's SHA-256 digest.
   perl -pi -e 's#Self \{ team: Some\(TEAM_ID\), version: release\.version\.as_ref\(\) \}#Self { team: None, version: release.version.as_ref() }#' crates/native/src/install.rs
