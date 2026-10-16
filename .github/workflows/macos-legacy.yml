@@ -28,24 +28,28 @@ jobs:
     outputs:
       build: ${{ steps.decide.outputs.build }}
       tag: ${{ steps.decide.outputs.tag }}
+      fork_version: ${{ steps.decide.outputs.fork_version }}
     steps:
+      - uses: actions/checkout@v4
       - id: decide
         env:
           GH_TOKEN: ${{ github.token }}
           FORCE: ${{ github.event_name == 'push' || inputs.force == true }}
         run: |
           set -euo pipefail
-          # GitHub turns scheduled workflows off after 60 days without commits; re-enabling keeps this one on.
+          # GitHub turns scheduled workflows off after 60 days without commits; re-enabling keeps it on.
           gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/macos-legacy.yml/enable" || true
           upstream="https://github.com/storytold/${GITHUB_REPOSITORY#*/}.git"
           tag=$(git ls-remote --tags --refs "$upstream" | awk -F/ '{print $NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
           if [ -z "$tag" ]; then echo "::error::No release found in $upstream"; exit 1; fi
+          version=$(bash .github/legacy-macos/fork_version.sh "${GITHUB_REPOSITORY#*/}" "${tag#v}")
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [ "$FORCE" != true ] && gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" >/dev/null 2>&1; then
-            echo "::notice::$tag is already built, nothing to do"
+          echo "fork_version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" != true ] && gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$version" >/dev/null 2>&1; then
+            echo "::notice::v$version (storytold $tag) is already built, nothing to do"
             echo "build=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::Building $tag"
+            echo "::notice::Building storytold $tag as v$version"
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -59,6 +63,7 @@ jobs:
       cancel-in-progress: false
     env:
       UPSTREAM_TAG: ${{ needs.check.outputs.tag }}
+      LEGACY_VERSION: ${{ needs.check.outputs.fork_version }}
     steps:
       - uses: actions/checkout@v4
       - name: Switch to the upstream release
