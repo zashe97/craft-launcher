@@ -23,6 +23,10 @@ if [ -f crates/core/src/catalog.rs ] && grep -q 'LAUNCHER_REPO' crates/core/src/
   perl -0pi -e 's#(fn fetch_feed\([^{]*\{\n)#${1}    if url.is_empty() {\n        return FeedFetch::Failed;\n    }\n#' crates/native/src/backend.rs
   grep -q 'unwrap_or_default()' crates/native/src/backend.rs
   grep -q 'if url.is_empty()' crates/native/src/backend.rs
+  # The fork builds are ad-hoc signed (no Developer ID), so don't require ArtCraft's team
+  # signature; the download is still checked against the release's SHA-256 digest.
+  perl -pi -e 's#Self \{ team: Some\(TEAM_ID\), version: release\.version\.as_ref\(\) \}#Self { team: None, version: release.version.as_ref() }#' crates/native/src/install.rs
+  grep -q 'Self { team: None, version: release.version.as_ref() }' crates/native/src/install.rs
 fi
 # 2b. HTTPS: the OS certificate verifier needs SecTrustEvaluateWithError (10.14+) and Sierra's root
 # store is years out of date, so verify against the bundled Mozilla roots (webpki-roots) instead.
