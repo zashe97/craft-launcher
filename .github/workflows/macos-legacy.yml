@@ -1,25 +1,77 @@
 # Builds this Craft App for macOS 10.12 Sierra (Intel) and publishes it as a GitHub release
 # of this fork, where the patched launcher finds it. See .github/legacy-macos/patch.sh.
+# It builds the latest upstream release (storytold/<this repo>) with this fork's build scripts:
+# - every day, if that release isn't built here yet, so the launcher offers the update on its own;
+# - by hand (Actions > macOS 10.12 build > Run workflow), "force" rebuilds a release already built;
+# - on a push to main (the build scripts changed), always.
 name: macOS 10.12 build
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if the latest release is already built
+        type: boolean
+        default: false
   push:
     branches: [main]
+  schedule:
+    - cron: '23 4 * * *'
 
 permissions:
   contents: write
-
-concurrency:
-  group: macos-legacy
-  cancel-in-progress: true
+  actions: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.event_name == 'push' || inputs.force == true }}
+        run: |
+          set -euo pipefail
+          # GitHub turns scheduled workflows off after 60 days without commits; re-enabling keeps this one on.
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/macos-legacy.yml/enable" || true
+          upstream="https://github.com/storytold/${GITHUB_REPOSITORY#*/}.git"
+          tag=$(git ls-remote --tags --refs "$upstream" | awk -F/ '{print $NF}' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          if [ -z "$tag" ]; then echo "::error::No release found in $upstream"; exit 1; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" != true ] && gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::$tag is already built, nothing to do"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Building $tag"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.build == 'true'
     runs-on: macos-15
     timeout-minutes: 120
+    concurrency:
+      group: macos-legacy
+      cancel-in-progress: false
+    env:
+      UPSTREAM_TAG: ${{ needs.check.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+      - name: Switch to the upstream release
+        run: |
+          set -euo pipefail
+          # Keep this fork's build scripts, take everything else from the upstream release.
+          cp -R .github/legacy-macos "$RUNNER_TEMP/legacy-macos"
+          git fetch --depth=1 "https://github.com/storytold/${GITHUB_REPOSITORY#*/}.git" "refs/tags/$UPSTREAM_TAG:refs/tags/upstream-$UPSTREAM_TAG"
+          git checkout -f "upstream-$UPSTREAM_TAG"
+          git clean -fdx
+          mkdir -p .github
+          rm -rf .github/legacy-macos
+          cp -R "$RUNNER_TEMP/legacy-macos" .github/legacy-macos
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-apple-darwin
@@ -98,7 +150,7 @@ jobs:
           shopt -s nullglob
           files=(./*.dmg ./*.zip)
           shasum -a 256 "${files[@]}" > SHA256SUMS.txt
-          NOTES="Build for macOS 10.12 Sierra (Intel x86_64), from ${GITHUB_SHA::7}. Ad-hoc signed: the first time, right-click the app and choose Open."
+          NOTES="Build for macOS 10.12 Sierra (Intel x86_64) of storytold $UPSTREAM_TAG. Ad-hoc signed: the first time, right-click the app and choose Open."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" ./SHA256SUMS.txt --clobber
           else
