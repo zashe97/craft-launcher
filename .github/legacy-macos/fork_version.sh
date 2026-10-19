@@ -3,11 +3,12 @@
 # The launcher updates itself only to a higher version, so its builds carry this fork's own
 # revision in the patch number: X.Y.(Z*100 + revision). Raising the number in `revision` ships a
 # fix to the launcher's users through its self-update, and every later upstream release still
-# sorts higher (0.4.1 -> 0.4.100, 0.4.101, ... then 0.4.2 -> 0.4.2xx). The apps keep upstream's.
+# sorts higher (0.4.1 -> 0.4.100, 0.4.101, ... then 0.4.2 -> 0.4.2xx). An app fork does the same
+# once it has a `revision` file (its own features or fixes); otherwise it keeps upstream's version.
 set -euo pipefail
 repo="${1:?repo}"
 version="${2:?version}"
-if [ "$repo" != craft-launcher ]; then echo "$version"; exit 0; fi
+if [ "$repo" != craft-launcher ] && [ ! -f "$(dirname "${BASH_SOURCE[0]}")/revision" ]; then echo "$version"; exit 0; fi
 rev=$(tr -cd '0-9' < "$(dirname "${BASH_SOURCE[0]}")/revision")
 rev=${rev:-0}
 if [ "$rev" -ge 100 ]; then echo "revision must stay below 100" >&2; exit 1; fi
